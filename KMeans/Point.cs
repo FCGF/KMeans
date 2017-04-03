@@ -8,11 +8,11 @@ namespace KMeans {
             NearestPoints = new List<Point>();
         }
 
-        private IList<int> coordinates;
-        public IList<int> Coordinates {
+        private IList<double> coordinates;
+        public IList<double> Coordinates {
             get {
                 if (coordinates == null) {
-                    coordinates = new List<int>();
+                    coordinates = new List<double>();
                 }
                 return coordinates;
             }

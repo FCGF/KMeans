@@ -5,7 +5,7 @@ using System.Linq;
 namespace KMeans {
     public class Program {
 
-        private static int MinDifference = 5;
+        private static int DifferenceThreshold = 5;
 
         public static void Main(string[] args) {
             KMeans();
@@ -17,28 +17,71 @@ namespace KMeans {
             int kAmount = ValidateAndParseK(ReadK());
 
             string rawValue = ReadPointCoordinates();
-            int[] values = rawValue.Split(',').Select(v => int.Parse(v)).ToArray();
+            double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
 
             ValidateCoordinateLenght(points[0], values);
 
-            Point pointToClassify = MakeUncateogrizedPoint(values);
+            Point pointToClassify = MakeUncategorizedPoint(values);
 
             IList<Point> previousPositions;
-            IList<Point> ks = CreateRandomKs(kAmount);
+            IList<Point> ks = CreateInitialKs(kAmount);
 
             do {
                 previousPositions = new List<Point>(ks);
 
-            } while (AverageDifferences(ks, previousPositions) > MinDifference);
+                foreach (Point k in ks) {
+                    k.NearestPoints.Clear();
+                }
 
+                foreach (Point p in points) {
+                    Point nearestK = null;
+                    foreach (Point k in ks) {
+                        k.CalculateEuclidianDistanceToPoint(p);
+                        if (nearestK == null || k.Distance < nearestK.Distance) {
+                            nearestK = k;
+                        }
+                    }
+                    nearestK.NearestPoints.Add(p);
+                }
 
+                IList<Point> newKs = new List<Point>();
+                foreach (Point k in ks) {
+                    IList<double> coordinates = new List<double>();
+
+                    for (int i = 0; i < k.Coordinates.Count; i++) {
+                        double average = 0;
+
+                        foreach (Point point in k.NearestPoints) {
+                            average += point.Coordinates[i];
+                        }
+
+                        average /= k.Coordinates.Count;
+
+                        coordinates.Add(average);
+
+                    }
+
+                    newKs.Add(MakeUncategorizedPoint(coordinates.ToArray()));
+                }
+
+                ks = newKs;
+            } while (AverageDifferences(ks, previousPositions) > DifferenceThreshold);
+
+            foreach (Point p in ks) {
+                p.CalculateEuclidianDistanceToPoint(pointToClassify);
+                pointToClassify.NearestPoints.Add(p);
+            }
+
+            Console.WriteLine("The point with coordinates " + string.Join(", ", pointToClassify.Coordinates) + " is of Class " + pointToClassify.NearestPoints.OrderBy(p => p.Distance).FirstOrDefault().Class);
+
+            Console.ReadLine();
 
         }
 
         private static double AverageDifferences(IList<Point> currentPositions, IList<Point> previousPositions) {
             double average = 0;
 
-            Point origin = MakeUncateogrizedPoint(new int[previousPositions.Count]);
+            Point origin = MakeUncategorizedPoint(new double[previousPositions.Count]);
 
             for (int i = 0; i < currentPositions.Count; i++) {
                 currentPositions[i].CalculateEuclidianDistanceToPoint(previousPositions[i]);
@@ -49,7 +92,7 @@ namespace KMeans {
             return average / currentPositions.Count;
         }
 
-        private static IList<Point> CreateRandomKs(int k) {
+        private static IList<Point> CreateInitialKs(int k) {
             //Criar Ks
             IList<Point> ks = new List<Point>();
             Random random = new Random();
@@ -64,11 +107,11 @@ namespace KMeans {
             IList<Point> points = MakePoints();
 
             string rawValue = ReadPointCoordinates();
-            int[] values = rawValue.Split(',').Select(v => int.Parse(v)).ToArray();
+            double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
 
             ValidateCoordinateLenght(points[0], values);
 
-            Point pointToClassify = MakeUncateogrizedPoint(values);
+            Point pointToClassify = MakeUncategorizedPoint(values);
 
             foreach (Point point in points) {
                 point.CalculateEuclidianDistanceToPoint(pointToClassify);
@@ -129,7 +172,7 @@ namespace KMeans {
             return objects.Any(o => o == null);
         }
 
-        private static void ValidateCoordinateLenght(Point point, int[] coordinates) {
+        private static void ValidateCoordinateLenght(Point point, double[] coordinates) {
             if (coordinates.Length != point.Coordinates.Count) {
                 throw new ArgumentException("Incorrect parameter quantity!");
             }
@@ -178,15 +221,15 @@ namespace KMeans {
             return points;
         }
 
-        private static void AddPoint(IList<Point> points, PointClass pointClass, params int[] coordinates) {
-            Point point = MakeUncateogrizedPoint(coordinates);
+        private static void AddPoint(IList<Point> points, PointClass pointClass, params double[] coordinates) {
+            Point point = MakeUncategorizedPoint(coordinates);
             point.Class = pointClass;
             points.Add(point);
         }
 
-        private static Point MakeUncateogrizedPoint(params int[] coordinates) {
+        private static Point MakeUncategorizedPoint(params double[] coordinates) {
             Point point = new Point();
-            foreach (int coordinate in coordinates) {
+            foreach (double coordinate in coordinates) {
                 point.Coordinates.Add(coordinate);
             }
 
