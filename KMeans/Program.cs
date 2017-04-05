@@ -1,37 +1,66 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace KMeans {
     public class Program {
 
-        private static int DifferenceThreshold = 5;
+        private static double DifferenceThreshold = 0.001;
+        private static string TestbasePath = @"D:\Uni\5a fase\Inteligencia Artificial\BaseRGB";
+        private static string PointsToClassifyPath = @"D:\Uni\5a fase\Inteligencia Artificial\BaseRGBPointsToClassify";
 
         public static void Main(string[] args) {
-            KMeans();
+            //KMeans();
+            KNN();
         }
 
         private static void KMeans() {
-            IList<Point> points = MakePoints();
+            IList<Point> points = MakePoints(TestbasePath, true);
 
             int kAmount = ValidateAndParseK(ReadK());
 
             string rawValue = ReadPointCoordinates();
-            double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
+            IList<Point> pointsToClassify;
 
-            ValidateCoordinateLenght(points[0], values);
+            do {
+                try {
+                    double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
+                    ValidateCoordinateLenght(points[0], values);
+                    pointsToClassify = new List<Point>() { MakeUncategorizedPoint(values) };
+                } catch {
+                    pointsToClassify = MakePoints(rawValue.Trim());
+                }
 
-            Point pointToClassify = MakeUncategorizedPoint(values);
+                IList<Point> ks = CreateInitialKs(kAmount, pointsToClassify);
 
+                ks = RepositionKs(points, ks);
+
+                CalculateDistanceToKs(pointsToClassify, ks);
+
+                Console.ReadLine();
+            } while (true);
+
+        }
+
+        private static void CalculateDistanceToKs(IList<Point> pointsToClassify, IList<Point> ks) {
+            foreach (Point pointToClassify in pointsToClassify) {
+                foreach (Point k in ks) {
+                    k.CalculateEuclidianDistanceToPoint(pointToClassify);
+                    pointToClassify.NearestPoints.Add(k);
+                }
+                Point chosenK = pointToClassify.NearestPoints.OrderBy(p => p.Distance).FirstOrDefault();
+                Console.WriteLine("The point with coordinates [" + string.Join(", ", pointToClassify.Coordinates.Select(c => string.Format("{0:000.000}", c))) + "] is of Class " + chosenK.Class
+                                + ", belonging to k at position  \t[" + string.Join(", ", chosenK.Coordinates.Select(c => string.Format("{0:000.000}", c))) + "] "
+                                + " with distance " + chosenK.Distance);
+            }
+        }
+
+        private static IList<Point> RepositionKs(IList<Point> points, IList<Point> ks) {
             IList<Point> previousPositions;
-            IList<Point> ks = CreateInitialKs(kAmount);
 
             do {
                 previousPositions = new List<Point>(ks);
-
-                foreach (Point k in ks) {
-                    k.NearestPoints.Clear();
-                }
 
                 foreach (Point p in points) {
                     Point nearestK = null;
@@ -50,82 +79,84 @@ namespace KMeans {
 
                     for (int i = 0; i < k.Coordinates.Count; i++) {
                         double average = 0;
-
-                        foreach (Point point in k.NearestPoints) {
-                            average += point.Coordinates[i];
+                        if (k.NearestPoints != null && k.NearestPoints.Count > 0) {
+                            foreach (Point point in k.NearestPoints) {
+                                average += point.Coordinates[i];
+                            }
+                            average /= k.NearestPoints.Count;
+                        } else {
+                            average = k.Coordinates[i];
                         }
-
-                        average /= k.Coordinates.Count;
-
                         coordinates.Add(average);
 
                     }
-
-                    newKs.Add(MakeUncategorizedPoint(coordinates.ToArray()));
+                    Point newK = MakeUncategorizedPoint(coordinates.ToArray());
+                    newK.Class = k.Class;
+                    newKs.Add(newK);
                 }
 
                 ks = newKs;
             } while (AverageDifferences(ks, previousPositions) > DifferenceThreshold);
-
-            foreach (Point p in ks) {
-                p.CalculateEuclidianDistanceToPoint(pointToClassify);
-                pointToClassify.NearestPoints.Add(p);
-            }
-
-            Console.WriteLine("The point with coordinates " + string.Join(", ", pointToClassify.Coordinates) + " is of Class " + pointToClassify.NearestPoints.OrderBy(p => p.Distance).FirstOrDefault().Class);
-
-            Console.ReadLine();
-
+            return ks;
         }
 
         private static double AverageDifferences(IList<Point> currentPositions, IList<Point> previousPositions) {
-            double average = 0;
+            double Sum = 0;
 
             Point origin = MakeUncategorizedPoint(new double[previousPositions.Count]);
 
             for (int i = 0; i < currentPositions.Count; i++) {
                 currentPositions[i].CalculateEuclidianDistanceToPoint(previousPositions[i]);
-                previousPositions[i].CalculateEuclidianDistanceToPoint(origin);
-                average += (100.0 * currentPositions[i].Distance / previousPositions[i].Distance);
+                Sum += (currentPositions[i].Distance);
             }
 
-            return average / currentPositions.Count;
+            return Sum / currentPositions.Count;
         }
 
-        private static IList<Point> CreateInitialKs(int k) {
+        private static IList<Point> CreateInitialKs(int k, IList<Point> pointsToClassify) {
             //Criar Ks
+            int size = pointsToClassify.First().Coordinates.Count;
             IList<Point> ks = new List<Point>();
             Random random = new Random();
-            for (int i = 0; i < k; i++) {
-                AddPoint(ks, PointClass.Unknown, random.Next(255), random.Next(255), random.Next(255));
+            for (int i = 1; i <= k; i++) {
+                double[] coords = new double[size];
+                for (int j = 0; j < size; j++) {
+                    coords[j] = (pointsToClassify.Max(p => p.Coordinates[j]) - pointsToClassify.Min(p => p.Coordinates[j])) * random.NextDouble();
+                }
+                AddPoint(ks, (PointClass)Enum.Parse(typeof(PointClass), i.ToString(), true), coords);
             }
 
             return ks;
         }
 
         private static void KNN() {
-            IList<Point> points = MakePoints();
+            IList<Point> points = MakePoints(TestbasePath, true);
 
             string rawValue = ReadPointCoordinates();
-            double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
+            IList<Point> pointsToClassify;
 
-            ValidateCoordinateLenght(points[0], values);
-
-            Point pointToClassify = MakeUncategorizedPoint(values);
-
-            foreach (Point point in points) {
-                point.CalculateEuclidianDistanceToPoint(pointToClassify);
+            try {
+                double[] values = rawValue.Split(',').Select(v => double.Parse(v)).ToArray();
+                ValidateCoordinateLenght(points[0], values);
+                pointsToClassify = new List<Point>() { MakeUncategorizedPoint(values) };
+            } catch {
+                pointsToClassify = MakePoints(rawValue.Trim());
             }
 
             string readK = ReadK();
             int k = ValidateAndParseK(readK);
-            Point[] nearestPoints = FindNearestPoints(points, k);
 
-            IDictionary<PointClass, int> count = CountClasses(nearestPoints);
+            foreach (Point pointToClassify in pointsToClassify) {
+                foreach (Point point in points) {
+                    point.CalculateEuclidianDistanceToPoint(pointToClassify);
+                }
+                Point[] nearestPoints = FindNearestPoints(points, k);
+                IDictionary<PointClass, int> count = CountClasses(nearestPoints);
 
-            var highest = count.Aggregate((l, r) => l.Value > r.Value ? l : r);
+                var highest = count.Aggregate((l, r) => l.Value > r.Value ? l : r);
 
-            Console.WriteLine("The point with coordinates " + string.Join(", ", pointToClassify.Coordinates) + " has a " + ((double)highest.Value) / k * 100 + "% probability to be of Class " + highest.Key);
+                Console.WriteLine("The point with coordinates [" + string.Join(", ", pointToClassify.Coordinates) + "] has a " + ((double)highest.Value) / k * 100 + "% probability to be of Class " + highest.Key);
+            }
 
             Console.ReadLine();
         }
@@ -187,7 +218,7 @@ namespace KMeans {
         }
 
         private static string ReadPointCoordinates() {
-            Console.WriteLine("Insert the comma separated RGB value:");
+            Console.WriteLine("Insert the comma separated RGB value or file path:");
             return Console.ReadLine().Trim();
         }
 
@@ -196,9 +227,37 @@ namespace KMeans {
             return Console.ReadLine().Trim();
         }
 
-        private static IList<Point> MakePoints() {
+        private static IList<Point> MakePoints(string path = null, bool hasClassifier = false) {
             IList<Point> points = new List<Point>();
 
+            if (string.IsNullOrWhiteSpace(path)) {
+                //AddPoints(points);
+                points = ReadFile(PointsToClassifyPath, hasClassifier);
+            } else {
+                points = ReadFile(path, hasClassifier);
+            }
+
+            return points;
+        }
+
+        private static IList<Point> ReadFile(string path, bool hasClassifier = false) {
+            IList<Point> points = new List<Point>();
+
+            string[] lines = File.ReadAllLines(path);
+            foreach (string line in lines) {
+                IList<double> values = line.Split(',').Select(v => double.Parse(v.Trim())).ToList();
+                PointClass pClass = default(PointClass);
+                if (hasClassifier) {
+                    pClass = (PointClass)Enum.Parse(typeof(PointClass), values.Last().ToString());
+                    values.RemoveAt(values.Count - 1);
+                }
+                points.Add(new Point() { Class = pClass, Coordinates = values });
+            }
+
+            return points;
+        }
+
+        private static void AddPoints(IList<Point> points) {
             AddPoint(points, PointClass.One, 1, 10, 200);
             AddPoint(points, PointClass.One, 2, 20, 230);
             AddPoint(points, PointClass.One, 6, 25, 150);
@@ -217,8 +276,6 @@ namespace KMeans {
             AddPoint(points, PointClass.Three, 95, 200, 10);
             AddPoint(points, PointClass.Three, 80, 210, 4);
             AddPoint(points, PointClass.Three, 49, 207, 1);
-
-            return points;
         }
 
         private static void AddPoint(IList<Point> points, PointClass pointClass, params double[] coordinates) {
